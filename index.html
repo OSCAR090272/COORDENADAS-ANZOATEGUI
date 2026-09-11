@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GeoAnzoátegui Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+        body { background-color: #f4f6f9; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { background-color: #1e3a8a; color: white; padding: 15px; text-align: center; font-size: 1.2rem; font-weight: bold; }
+        #map { flex: 1; width: 100%; }
+        #info-panel { background-color: white; padding: 15px; border-top-left-radius: 20px; border-top-right-radius: 20px; box-shadow: 0 -4px 10px rgba(0,0,0,0.1); }
+        .geo-group { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+        .label { font-size: 0.8rem; color: #666; text-transform: uppercase; font-weight: 600; margin-bottom: 4px; }
+        .value { font-family: monospace; font-size: 1.05rem; color: #111; background: #f8fafc; padding: 6px; border-radius: 4px; }
+        .status-badge { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; margin-bottom: 10px; text-align: center; width: 100%; }
+        .outside { background-color: #fee2e2; color: #991b1b; }
+        .inside { background-color: #dcfce7; color: #166534; }
+        .searching { background-color: #fef9c3; color: #854d0e; }
+    </style>
+</head>
+<body>
+
+    <header>🌐 GeoAnzoátegui Tracker</header>
+    <div id="map"></div>
+    <div id="info-panel">
+        <div id="status" class="status-badge searching">Buscando señal GPS...</div>
+        <div class="geo-group"><div class="label">Grados Decimales (DD)</div><div id="coords-dd" class="value">Esperando...</div></div>
+        <div class="geo-group"><div class="label">Grados, Minutos y Segundos (DMS)</div><div id="coords-dms" class="value">Esperando...</div></div>
+        <div class="geo-group"><div class="label">Coordenadas UTM (Zona 20N)</div><div id="coords-utm" class="value">Esperando...</div></div>
+    </div>
+
+    <script src="https://unpkg.com"></script>
+    <script>
+        // Límites geográficos aproximados de Anzoátegui
+        const ANZOATEGUI_BOUNDS = { latMin: 7.65, latMax: 10.25, lngMin: -65.20, lngMax: -63.50 };
+
+        const map = L.map('map').setView([8.9, -64.3], 8);
+        L.tileLayer('https://arcgisonline.com{z}/{y}/{x}').addTo(map);
+        let userMarker = null;
+
+        function convertToDMS(dd, isLat) {
+            const dir = isLat ? (dd >= 0 ? "N" : "S") : (dd >= 0 ? "E" : "O");
+            const absDd = Math.abs(dd);
+            const d = Math.floor(absDd);
+            const m = Math.floor((absDd - d) * 60);
+            const s = (((absDd - d) * 60 - m) * 60).toFixed(2);
+            return `${d}°${m}'${s}" ${dir}`;
+        }
+
+        function convertToUTM(lat, lon) {
+            const zone = 20;
+            const latRad = lat * Math.PI / 180;
+            const lonRad = lon * Math.PI / 180;
+            const lonOrigin = (zone * 6 - 183) * Math.PI / 180; 
+            const a = 6378137.0; const eccSquared = 0.00669438; const k0 = 0.9996;
+            const N = a / Math.sqrt(1 - eccSquared * Math.sin(latRad) * Math.sin(latRad));
+            const T = Math.tan(latRad) * Math.tan(latRad);
+            const C = eccSquared * Math.cos(latRad) * Math.cos(latRad) / (1 - eccSquared);
+            const A = (lonRad - lonOrigin) * Math.cos(latRad);
+            const M = a * ((1 - eccSquared / 4 - 3 * eccSquared * eccSquared / 64) * latRad - (3 * eccSquared / 8 + 3 * eccSquared * eccSquared / 32) * Math.sin(2 * latRad) + (15 * eccSquared * eccSquared / 256) * Math.sin(4 * latRad));
+            const x = (k0 * N * (A + (1 - T + C) * A * A * A / 6) + 500000.0).toFixed(1);
+            const y = (k0 * (M + N * Math.tan(latRad) * (A * A / 2 + (5 - T + 9 * C) * A * A * A * A / 24))).toFixed(1);
+            return `E: ${x}m | N: ${y}m`;
+        }
+
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition((p) => {
+                const lat = p.coords.latitude; const lng = p.coords.longitude;
+                const status = document.getElementById('status');
+                if (lat < ANZOATEGUI_BOUNDS.latMin || lat > ANZOATEGUI_BOUNDS.latMax || lng < ANZOATEGUI_BOUNDS.lngMin || lng > ANZOATEGUI_BOUNDS.lngMax) {
+                    status.className = "status-badge outside"; status.innerText = " Fuera de Anzoátegui";
+                    return;
+                }
+                status.className = "status-badge inside"; status.innerText = "📍 Dentro de Anzoátegui";
+                document.getElementById('coords-dd').innerText = `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
+                document.getElementById('coords-dms').innerText = `Lat: ${convertToDMS(lat, true)} | Lng: ${convertToDMS(lng, false)}`;
+                document.getElementById('coords-utm').innerText = convertToUTM(lat, lng);
+                if (userMarker) { userMarker.setLatLng([lat, lng]); } else { userMarker = L.marker([lat, lng]).addTo(map); }
+                map.setView([lat, lng], 15);
+            }, (e) => { document.getElementById('status').innerText = "❌ Error GPS: " + e.message; }, { enableHighAccuracy: true });
+        }
+    </script>
+</body>
+</html>
