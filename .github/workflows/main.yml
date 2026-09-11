@@ -1,0 +1,38 @@
+name: Compilar APK de Anzoategui
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configurar Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
+
+    - name: Configurar Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'zulu'
+        java-version: '11'
+
+    - name: Instalar Cordova
+      run: npm install -g cordova
+
+    - name: Crear Proyecto Cordova
+      run: |
+        cordova create geoapp com.anzoategui.geo GeoAnzoategui
+        cd geoapp
+        cordova platform add android
+        cordova plugin add cordova-plugin-geolocation
+        rm -rf www/*
+        cp ../index.html www/index.html
+        cordova build android --no-telemetry
+
+    - name: Guardar el APK Generado
+      uses: actions/upload-artifact@v4
+      with:
+        name: GeoAnzoategui-APK
+        path: geoapp/platforms/android/app/build/outputs/apk/debug/app-debug.apk
